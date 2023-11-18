@@ -1,46 +1,51 @@
-import {GameCommunication} from './gameComm'
-import Phaser from 'phaser'
+import {
+  AutomataSocketCommand,
+  AutomataSpawnTemplateCommandData,
+} from "./commands/AutomataCommands";
+import { GameCommunication } from "./gameComm";
 
-interface UserData {
-  socketId: string,
-  loginTime: number,
-  x: number,
-  y:number,
-  vx: number,
-  vy:number
-  angle: number,
-  color: string
-}
+export function clientConnection(io: any, client: any) {
+  client.on("message", (channel, tags, message, self) =>
+    parseEmoteCommand(channel, tags, message, self, io)
+  );
 
-export function clientConnection(io: any) {
+  io.on("connection", function (socket) {
+    GameCommunication(io, socket);
 
-  
-  let currentUsers: UserData[] = [] //array to store socketids and player data of each connection
-
-  
-  io.on('connection', function (socket) {
-    
-    GameCommunication(io, socket, currentUsers)  
-    
     //remove the users data when they disconnect.
-    socket.on('disconnect', function () {
-      removeUser(currentUsers, socket);
-    });
-  })
+    socket.on("disconnect", function () {});
+  });
 
-     setInterval(()=>{
+  setInterval(() => {
     var time = new Date();
-    console.log(currentUsers.length+" logged in @ "+ time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }))
-     }, 5000) 
-  }
-
-function removeUser(currentUsers: UserData[], socket: SocketIO.Socket) {
-  let u: UserData[] = currentUsers.filter((user: UserData) => { return user.socketId == socket.id; });
-  if (u && u[0]) {
-    socket.broadcast.emit("remove player", u[0].socketId);
-    currentUsers.splice(currentUsers.indexOf(u[0]), 1);
-  }
-  socket.removeAllListeners();
+    // console.log(currentUsers.length+" logged in @ "+ time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }))
+  }, 5000);
 }
 
- 
+function parseEmoteCommand(channel, tags, message, self, io) {
+  if (tags.emotes == undefined) {
+    return;
+  }
+  const stringReplacements: any[] = [];
+  const emotes = tags.emotes;
+  // iterate of emotes to access ids and positions
+  Object.entries(emotes).forEach(([id, positions]: any) => {
+    // use only the first position to find out the emote key word
+    const position = positions[0];
+    const [start, end] = position.split("-");
+    const emote: string = message.substring(
+      parseInt(start, 10),
+      parseInt(end, 10) + 1
+    );
+    stringReplacements.push({
+      path: `https://static-cdn.jtvnw.net/emoticons/v1/${id}/3.0`,
+      emote: emote,
+    });
+    let commandData: AutomataSpawnTemplateCommandData = {
+      templateName: "against the grain",
+      team: tags.username,
+    };
+    // console.log(stringReplacements.map((r) => r.path));
+    io.emit(AutomataSocketCommand.SPAWN_TEMPLATE, commandData);
+  });
+}

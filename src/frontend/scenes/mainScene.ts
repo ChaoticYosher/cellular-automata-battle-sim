@@ -1,132 +1,290 @@
-
-import io from 'socket.io-client'
-import Square from '../objects/square'
-//import Ball from '../objects/ball'
-
-interface UserData {
-  socketId: string,
-  loginTime: string,
-  x: number,
-  y:number,
-  vx: number,
-  vy:number
-  angle: number,
-  color: string
-}
-
+import io from "socket.io-client";
+import { AutomataView } from "../components/automata/AutomataView";
+import { AutomataViewConfig } from "../components/automata/AutomataViewConfig";
+import { GridCell } from "../components/automata/GridCell";
+import { GameText } from "../core/GameText";
+import { GameView } from "../core/GameView";
+import { GameEventData, ViewConfig } from "../core/dataTypes";
+import { GameConfig } from "../config/GameConfig";
+import {
+  AutomataCellUpdateCommandData,
+  AutomataSocketCommand,
+  AutomataSpawnTemplateCommandData,
+  SimType,
+} from "../../backend/commands/AutomataCommands";
+import { GameButton } from "../core/GameButton";
+import { GameSprite } from "../core/GameSprite";
+import { UIView } from "../components/ui/UIView";
+import { UIViewConfig } from "../components/ui/UIViewConfig";
+import { UIEvents } from "../components/ui/UIEvents";
 
 export default class MainScene extends Phaser.Scene {
- 
-  firstHi = false  
-  playersConnectedText: Phaser.GameObjects.Text
-    player: Square
-    socket: SocketIOClient.Socket
-    opponents: Square[] = []
+  firstHi = false;
+  socket: SocketIOClient.Socket;
+  gameConfig: GameConfig;
+  views: { [key: string]: GameView };
+  automataView: AutomataView;
+  uiView: UIView;
 
-  playerLabel: Phaser.GameObjects.Text
-
-
-    constructor() {
-    super('MainScene')
+  constructor() {
+    super("MainScene");
+    this.init();
   }
 
-  init(data: any) { }
+  addView<V extends GameView, C extends ViewConfig>(
+    viewType: new (scene: Phaser.Scene, data: C) => V,
+    config: C,
+    ...events: GameEventData[]
+  ): V {
+    let newView: V = new viewType(this.scene.scene, config);
+    this.views[config.key] = newView;
+    this.add.existing(newView);
+    events.forEach((event) => {
+      newView.addListener(event.name, event.callback, event.context);
+    });
+    return newView;
+  }
+
+  init() {
+    this.views = {};
+    this.gameConfig = {
+      automataConfig: {
+        key: Views.AUTOMATA,
+        cell: {
+          objectType: GridCell,
+          x: 0.5,
+          y: 0.5,
+          texture: "square",
+          scale: { x: 0.75, y: 0.9 },
+          teamColours: [0xff0000, 0xff7f00, 0x9f248d, 0xababfe],
+        },
+        boardPosition: { x: 0.04, y: 0.16, w: 0.92, h: 0.8 },
+        boardFillPercentage: 0.2,
+        cellCount: { x: 400, y: 225 },
+        text: {
+          objectType: GameText,
+          x: 0.5,
+          y: 0.08,
+          scale: { x: 1.2, y: 1.2 },
+          origin: { x: 0.5, y: 0.5 },
+          text: "test",
+          style: { color: "#ff0000", fontSize: "64pt" },
+        },
+        simData: {
+          [SimType.MAIN]: {
+            birth: [3],
+            death: [2, 3],
+            wrap: true,
+          },
+        },
+        templates: [
+          {
+            name: "glider",
+            layout: ["***", "*..", ".*."],
+          },
+          {
+            name: "against the grain",
+            layout: [
+              "...*..*..*..*..*..*..*..*..*..*..*...",
+              ".***********************************.",
+              "*...................................*",
+              ".***********************************.",
+              ".....................................",
+              ".***********************************.",
+              "*...................................*",
+              ".***********************************.",
+              ".....................................",
+              ".***********************************.",
+              "*...................................*",
+              ".***********************************.",
+              ".....................................",
+              ".***********************************.",
+              "*...................................*",
+              ".*****************..****************.",
+              ".....................................",
+              ".***************......**************.",
+              "*...............*....*..............*",
+              ".****************....***************.",
+              ".....................................",
+              ".*************...****...************.",
+              "*.................**................*",
+              ".************............***********.",
+              ".............*..........*............",
+              ".**************........*************.",
+              "*..............*......*.............*",
+              ".***************......**************.",
+              "..........**....*....*....**.........",
+              ".*******......****..****......******.",
+              "*.......*...**...*..*...**...*......*",
+              ".*******.........*..*.........******.",
+              ".........*.....*......*.....*........",
+              ".*********......*....*......********.",
+              "*.........*....**.**.**....*........*",
+              ".***********....*....*....**********.",
+              "............**....**....**...........",
+              ".*******..***.*..*..*..*.***..******.",
+              "*..............***..***.............*",
+              ".*****......***.*....*.***......****.",
+              "......*....*..............*....*.....",
+              ".******........*......*........*****.",
+              "*......*...**..*..**..*..**...*.....*",
+              ".********.....*.**..**.*.....*******.",
+              ".........*..*.**......**.*..*........",
+              ".*********...**........**...********.",
+              "*..........*..............*.........*",
+              ".****************....***************.",
+              ".................****................",
+              ".*****************..****************.",
+              "*...................................*",
+              ".***********************************.",
+              "...*..*..*..*..*..*..*..*..*..*..*...",
+            ],
+          },
+          {
+            name: "diamond ring",
+            layout: [
+              "......*......",
+              ".....*.*.....",
+              "....*.*.*....",
+              "....*...*....",
+              "..**..*..**..",
+              ".*....*....*.",
+              "*.*.**.**.*.*",
+              ".*....*....*.",
+              "..**..*..**..",
+              "....*...*....",
+              "....*.*.*....",
+              ".....*.*.....",
+              "......*......",
+            ],
+          },
+          {
+            name: "diehard",
+            layout: ["......*.", "**......", ".*...***"],
+          },
+          {
+            name: "double-barreled gun",
+            layout: [
+              ".................*................................",
+              ".................**...............................",
+              "..................**..............................",
+              ".................**...............................",
+              "................................*.................",
+              "...............................**...............**",
+              "..............................**................**",
+              ".................**............**.................",
+              "**................**..............................",
+              "**...............**...............................",
+              ".................*................................",
+              "...............................**.................",
+              "..............................**..................",
+              "...............................**.................",
+              "................................*.................            ",
+            ],
+          },
+        ],
+      },
+      uiConfig: {
+        key: Views.UI,
+        button: {
+          objectType: GameButton,
+          x: 0.9,
+          y: 0.1,
+          button: {
+            objectType: GameSprite,
+            texture: "square",
+            tint: { bl: 0xff00ff },
+            origin: { x: 0.5, y: 0.5 },
+            scale: { x: 0.5, y: 0.5 },
+          },
+          text: {
+            objectType: GameText,
+            text: "Press Me",
+            origin: { x: 0.5, y: 0.5 },
+            style: { color: "#000000", fontSize: "24pt" },
+          },
+        },
+      },
+    };
+  }
+
   preload() {
-      this.load.image("square", "assets/square.png")
-      this.load.image("circle", "assets/circle.png")
-   }
+    this.load.image("square", "assets/square.png");
+    this.load.image("circle", "assets/circle.png");
+  }
 
   create() {
+    this.matter.world.setBounds(
+      0,
+      0,
+      this.game.config.width as number,
+      this.game.config.height as number,
+      50,
+      true,
+      true,
+      true,
+      true
+    );
 
-    this.add.text(500,300,"press anywhere to hop", {fontSize:"50px"}).setOrigin(.5,.5)
+    this.socket = io();
+    this.socket.emit("ready");
+    this.socket.on(
+      AutomataSocketCommand.SPAWN_TEMPLATE,
+      (spawnData: AutomataSpawnTemplateCommandData) =>
+        this.spawnAutomataTemplate(spawnData)
+    );
+    this.socket.on(
+      AutomataSocketCommand.UPDATE_CELLS,
+      (updateData: AutomataCellUpdateCommandData) =>
+        this.updateCells(updateData)
+    );
 
-    this.playerLabel =  this.add.text(-50,-50," this is you").setOrigin(.5,1)
-    this.playersConnectedText = this.add.text(20,20,"")
-    this.matter.world.setBounds(0,0,1024,750, 50,true, true, true, true)
-    
-      this.socket = io()
-      this.socket.on("first hi", (data: UserData, opponentData: UserData[])=>{
-        if(this.firstHi != true){
-          this.firstHi = true
-        this.player = new Square(this, data)     
-        opponentData.forEach((o)=>{
-          let opponent = new Square(this, o)     
-          this.opponents.push(opponent)
-        })
-        this.time.addEvent({ delay: 1000/60,  loop: true, callback: this.updateState(), callbackScope: this });
-        }        
-      })
-
-      this.socket.on("add opponent", (data: UserData)=>{
-        let opponent = new Square(this, data)     
-        this.opponents.push(opponent)
-         
-      })
-      this.socket.on("remove player", (pSocket)=>{
-        let o:Square[] = this.opponents.filter((player:Square) => { return player.socketId == pSocket})
-        if(o && o[0]){
-          let p = o[0]
-          this.opponents.splice(this.opponents.indexOf(p, 1))
-          p.destroy()
-
-        }
-      })
-      this.socket.on("update all", (data: any[])=>{
-        data.forEach((p)=>{
-          let o:Square[] = this.opponents.filter((player:Square) => { return player.socketId == p.socketId})       
-          if(o && o[0] && o[0].socketId != this.player.socketId){
-            let opponent = o[0]
-            opponent.x = p.x
-            opponent.y = p.y
-            opponent.setVelocityX(p.vx)
-            opponent.setVelocityY(p.vY)
-            opponent.angle = p.angle
-          }
-
-        })       
-      })  
-      
-      this.socket.emit("ready")    
-      this.input.on("pointerdown", ()=>{
-        if(this.player.y>700)
-        this.player.applyForce(new Phaser.Math.Vector2(.025-.05*Math.random(), -.05-.125*Math.random()))
-      })     
+    this.automataView = this.addView<AutomataView, AutomataViewConfig>(
+      AutomataView,
+      this.gameConfig.automataConfig
+    );
+    this.uiView = this.addView<UIView, UIViewConfig>(
+      UIView,
+      this.gameConfig.uiConfig,
+      {
+        name: UIEvents.RUN_SIMULATION,
+        callback: this.startAutomataSimulation,
+        context: this,
+      }
+    );
+    // this.automataView.createGrid();
   }
 
-  update(){
-    if(this.player){
-      this.playerLabel.x = this.player.x
-      this.playerLabel.y = this.player.y-40
-    }
-    
+  protected spawnAutomataTemplate(
+    spawnData: AutomataSpawnTemplateCommandData
+  ): void {
+    this.automataView.spawnTemplate(spawnData);
   }
 
-  updateState(){
-    let oldX = 0
-    let oldY = 0
-    let oldAngle = 0
+  protected startAutomataSimulation(): void {
+    this.socket.emit(
+      AutomataSocketCommand.INIT_SIM,
+      this.automataView.getCurrentState()
+    );
+  }
 
+  protected updateCells(updateData: AutomataCellUpdateCommandData): void {
+    this.automataView.cellUpdate(updateData.states);
+  }
+
+  update(time: number, delta: number): void {
+    Object.values(this.views).forEach((view: GameView) => {
+      view.update(time, delta);
+    });
+  }
+
+  updateState() {
     //send a position update only if position is changed
-    return ()=>{
-
-      this.playersConnectedText.setText("clients connected: "+(this.opponents.length+1).toString())
-
-
-      if(this.player && (Math.abs(this.player.x - oldX) > 3 || Math.abs(this.player.y - oldY) > 3)){
-        let data = {
-          socketId: this.socket.id,
-          x: this.player.x,
-          y: this.player.y,
-          vx: this.player.body.velocity.x,
-          vy: this.player.body.velocity.x,
-          angle: this.player.angle
-        }
-        this.socket.emit("player update", data)
-        oldX = this.player.x
-        oldY = this.player.y
-        oldAngle = this.player.angle
-      }         
-    }    
+    return () => {};
   }
+}
 
+export enum Views {
+  AUTOMATA = "automataView",
+  UI = "uiView",
 }
